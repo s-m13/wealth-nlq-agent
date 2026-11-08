@@ -1,0 +1,144 @@
+# Semantic layer: the governed definitions the agent is allowed to use.
+# The LLM never writes SQL. It maps a question to an intent (see intent_examples.yaml),
+# and code builds the SQL from the definitions below.
+# Bump `version` on any change; it is logged with every evaluation run.
+
+version: 1.0.0
+
+# ---------------------------------------------------------------------------
+# Tables and how they join. Facts join to dimensions on the keys listed.
+# ---------------------------------------------------------------------------
+tables:
+  flows:
+    kind: fact
+    grain: one row per transaction
+    date_column: flow_date
+    joins:
+      clients: client_id
+      products: product_id
+  holdings_monthly:
+    kind: fact
+    grain: one row per month_end x client x product
+    date_column: month_end
+    joins:
+      clients: client_id
+      products: product_id
+  clients:
+    kind: dimension
+    key: client_id
+  products:
+    kind: dimension
+    key: product_id
+
+# ---------------------------------------------------------------------------
+# Metrics
+#   type: flow    -> summed over every day in the period
+#   type: stock   -> snapshot at the last month_end of the period (never summed across months)
+#   type: derived -> calculated from other metrics by code
+# ---------------------------------------------------------------------------
+metrics:
+  aum:
+    description: Assets under management at the end of the period.
+    type: stock
+    table: holdings_monthly
+    expression: SUM(aum_usd)
+    snapshot: period_end
+    unit: usd
+    synonyms: [assets under management, AUM, assets, book size, total assets]
+
+  gross_inflows:
+    description: Total money coming in (subscriptions and deposits) during the period.
+    type: flow
+    table: flows
+    expression: SUM(amount_usd)
+    filter: "flow_type = 'inflow'"
+    unit: usd
+    synonyms: [inflows, gross inflows, subscriptions, gross sales, money in]
+
+  gross_outflows:
+    description: Total money going out (redemptions and withdrawals) during the period.
+    type: flow
+    table: flows
+    expression: SUM(amount_usd)
+    filter: "flow_type = 'outflow'"
+    unit: usd
+    synonyms: [outflows, gross outflows, redemptions, withdrawals, money out]
+
+  net_inflows:
+    description: Inflows minus outflows during the period. Can be negative.
+    type: flow
+    table: flows
+    expression: "SUM(CASE WHEN flow_type = 'inflow' THEN amount_usd ELSE -amount_usd END)"
+    unit: usd
+    synonyms: [net inflows, net flows, net new money, NNM, net sales]
+
+  aum_growth_pct:
+    description: >
+      Percentage change in AUM over the period, from the month_end just before the
+      period starts to the last month_end of the period.
+      Example: Q3 2026 = (AUM 2026-09-30 - AUM 2026-06-30) / AUM 2026-06-30 * 100.
+    type: derived
+    base_metric: aum
+    formula: (end_value - start_value) / start_value * 100
+    start: month_end before period start
+    end: period_end
+    unit: pct
+    null_when: start_value is 0 or missing (e.g. a product with no AUM before the period)
+    synonyms: [AUM growth, asset growth, growth in AUM, AUM change %]
+
+# ---------------------------------------------------------------------------
+# Dimensions: what questions can filter or group by.
+# Values are canonical; synonyms map user wording to them (case-insensitive).
+# ---------------------------------------------------------------------------
+dimensions:
+  market:
+    table: clients
+    column: market
+    synonyms: [market, country, region, location, booking centre]
+    values:
+      Singapore: [SG, SGP, Singapore]
+      Hong Kong: [HK, HKG, Hong Kong]
+
+  segment:
+    table: clients
+    column: segment
+    synonyms: [segment, client segment, tier, wealth band]
+    values:
+      Mass Affluent: [mass affluent, affluent, MA]
+      HNW: [HNW, HNWI, high net worth]
+      UHNW: [UHNW, UHNWI, ultra high net worth]
+
+  asset_class:
+    table: products
+    column: asset_class
+    synonyms: [asset class, asset type]
+    values:
+      Equity: [equity, equities, stocks, shares]
+      Fixed Income: [fixed income, bonds, FI, credit]
+      Multi-Asset: [multi-asset, multi asset, balanced, portfolios]
+      Structured: [structured, structured products, notes]
+      Cash: [cash, deposits, money market]
+
+  product:
+    table: products
+    column: product_name
+    synonyms: [product, fund, product name]
+    # 20 products: canonical values are loaded from products.product_name at runtime
+    values_from: products.product_name
+
+# ---------------------------------------------------------------------------
+# Time. Every period is resolved by code relative to as_of_date, never by the LLM.
+# Periods are whole calendar months (holdings only exist at month_end).
+# ---------------------------------------------------------------------------
+time:
+  as_of_source: data_info.as_of_date   # 2026-10-31 for generator v1.0.0
+  data_start: 2024-11-01
+  expressions:
+    last_month: The latest complete month in the data (as_of 2026-10-31 -> October 2026).
+    month: A named month, e.g. "March 2026". Year omitted -> most recent complete occurrence.
+    quarter: Q1-Q4 with optional year. Year omitted -> most recent complete occurrence (Q3 -> Q3 2026, Q4 -> Q4 2025).
+    ytd: 1 January of the as_of year to as_of_date.
+    last_n_months: The n latest complete months ending at as_of_date (e.g. "last 3 months" -> Aug-Oct 2026).
+    year: A calendar year, e.g. "2025". Must be fully inside the data range.
+  default_when_missing: last_month   # stated as an assumption in the response
+  out_of_range: refuse              # any period not fully inside the data range

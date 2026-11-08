@@ -1,0 +1,59 @@
+# Intent: the ONLY thing the LLM outputs. Code validates it against
+# semantic_layer.yaml, resolves time, builds the SQL and computes the answer.
+#
+# Fields
+#   status:   ok | unsupported | clarify
+#   metric:   one metric name from semantic_layer.yaml (exactly one per intent)
+#   filters:  {dimension: [canonical values]}   multiple values = IN (...)
+#   group_by: [] or [one dimension]
+#   time:     {expression: <name from time.expressions>, plus its parameters}
+#   order:    asc | desc            (only with group_by)
+#   limit:    integer               (only with group_by)
+#   reason:   required when status is unsupported or clarify
+#   question: the clarifying question to ask, when status is clarify
+
+examples:
+  - question: What were net inflows in Singapore last month?
+    intent:
+      status: ok
+      metric: net_inflows
+      filters:
+        market: [Singapore]
+      group_by: []
+      time:
+        expression: last_month
+
+  - question: Which product had the highest AUM growth in Q3?
+    intent:
+      status: ok
+      metric: aum_growth_pct
+      filters: {}
+      group_by: [product]
+      time:
+        expression: quarter
+        quarter: 3
+        year: null        # resolved by code -> 2026
+      order: desc
+      limit: 1
+
+  - question: How much did HNW and UHNW clients redeem from bonds YTD?
+    intent:
+      status: ok
+      metric: gross_outflows
+      filters:
+        segment: [HNW, UHNW]
+        asset_class: [Fixed Income]
+      group_by: []
+      time:
+        expression: ytd
+
+  - question: Why did outflows rise in Hong Kong?
+    intent:
+      status: unsupported
+      reason: Driver or causal analysis is outside the governed metrics.
+
+  - question: How did we grow in Q3?
+    intent:
+      status: clarify
+      reason: '"Grow" could mean AUM growth or net inflows.'
+      question: Do you mean AUM growth (%) or net inflows (USD) in Q3 2026?

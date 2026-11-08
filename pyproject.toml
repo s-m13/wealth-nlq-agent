@@ -8,5 +8,8 @@ build-backend = "setuptools.build_meta"
 name = "wealth_copilot"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "duckdb>=2.0",
+  "pyyaml>=6.0",
+]
 
