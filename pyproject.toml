@@ -11,5 +11,8 @@ requires-python = ">=3.11"
 dependencies = [
   "duckdb>=2.0",
   "pyyaml>=6.0",
+  "openai>=3.46",
+  "langsmith>=0.14",
+  "python-dotenv>=1.2",
 ]
 

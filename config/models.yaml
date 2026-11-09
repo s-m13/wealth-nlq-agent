@@ -1,0 +1,17 @@
+# Price table used to compute cost per call. USD per 1M tokens.
+# The model in LLM_MODEL must have an entry here, or the service refuses to start
+# (never default cost to 0).
+# Prices change: re-check https://developers.openai.com/api/docs/pricing and
+# update `prices_checked` whenever you edit a price.
+
+prices_checked: 2026-11-09   # VERIFY against OpenAI's pricing page
+
+models:
+  openai:
+    gpt-5.4-nano:          # default: cheapest current model with Structured Outputs
+      input_per_1m: 0.20
+      cached_input_per_1m: 0.02
+      output_per_1m: 1.25
+    gpt-5.4-mini:          # step up if nano's intent accuracy is too low
+      input_per_1m: 0.75
+      output_per_1m: 4.50
